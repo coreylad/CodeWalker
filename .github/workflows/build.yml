@@ -1,0 +1,90 @@
+name: Build CodeWalker
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows Release build and regression checks
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 8
+        id: dotnet
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Select the installed SDK for this build
+        env:
+          BUILD_SDK_VERSION: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          # Keep newer preinstalled SDKs from changing the desktop build toolchain.
+          if (!(Test-Path global.json)) {
+            @{ sdk = @{ version = $env:BUILD_SDK_VERSION; rollForward = 'latestPatch' } } |
+              ConvertTo-Json | Set-Content global.json
+          }
+          dotnet --version
+
+      - name: Set up Visual Studio MSBuild
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
+        with:
+          msbuild-architecture: x64
+
+      - name: Run synthetic and RPF7 regression checks
+        run: dotnet run --project CodeWalker.Rpf9.Tests --configuration Release --no-launch-profile
+
+      - name: Build CodeWalker and RPF Explorer
+        run: >-
+          msbuild CodeWalker.RPFExplorer/CodeWalker.RPFExplorer.csproj
+          /restore /m /p:Configuration=Release /p:Platform=AnyCPU
+          /verbosity:minimal /nologo /bl:msbuild.binlog
+
+      - name: Prepare downloadable application
+        run: |
+          New-Item -ItemType Directory -Path artifacts/package -Force | Out-Null
+          Copy-Item CodeWalker.RPFExplorer/bin/Release/net48/* artifacts/package -Recurse
+          Copy-Item docs/RPF9.md artifacts/package
+          foreach ($name in @('CodeWalker.exe', 'CodeWalker RPF Explorer.exe', 'CodeWalker.Core.dll')) {
+            if (!(Test-Path (Join-Path artifacts/package $name))) {
+              throw "Build output is missing $name"
+            }
+          }
+
+      - name: Upload Windows application
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: CodeWalker-win-x64-${{ github.sha }}
+          path: artifacts/package/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: CodeWalker-build-logs-${{ github.sha }}
+          path: msbuild.binlog
+          if-no-files-found: ignore
+          retention-days: 7
