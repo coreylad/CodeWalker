@@ -55,9 +55,11 @@ namespace CodeWalker
         public ThemeBase Theme { get; private set; }
 
 
-        public ExploreForm()
+        public ExploreForm(string rpf9Folder = null)
         {
+            if (rpf9Folder != null) Rpf9Folder = System.IO.Path.GetFullPath(rpf9Folder);
             InitializeComponent();
+            AddRpf9Menu();
 
             SetTheme(Settings.Default.ExplorerWindowTheme, false);
 
@@ -66,6 +68,7 @@ namespace CodeWalker
             LoadSettings();
 
             GTAFolder.UpdateEnhancedFormTitle(this);
+            if (Rpf9Folder != null) Text = "CodeWalker RPF9 Explorer (read-only)";
         }
 
         private void SetTheme(string themestr, bool changing = true)
@@ -180,7 +183,7 @@ namespace CodeWalker
             // This is probably not necessary now that the GTA folder is checked 
             // in the Program.cs when the game is initiated, but we will leave it 
             // here for now to make sure 
-            if(!GTAFolder.UpdateGTAFolder(true))
+            if(Rpf9Folder == null && !GTAFolder.UpdateGTAFolder(true))
             {
                 Close();
                 return;
@@ -191,11 +194,16 @@ namespace CodeWalker
             {
                 try
                 {
-                    GTA5Keys.LoadFromPath(GTAFolder.CurrentGTAFolder, GTAFolder.IsGen9, Settings.Default.Key);
+                    if (Rpf9Folder != null)
+                    {
+                        Rpf9KeyStore.ForArchiveFolder(Rpf9Folder);
+                    }
+                    else GTA5Keys.LoadFromPath(GTAFolder.CurrentGTAFolder, GTAFolder.IsGen9, Settings.Default.Key);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    UpdateStatus("Unable to load gta5.exe!");
+                    UpdateStatus(Rpf9Folder == null ? "Unable to load gta5.exe!" : ex.Message);
+                    if (Rpf9Folder != null) UpdateErrorLog(ex.ToString());
                     return;
                 }
 
@@ -228,6 +236,7 @@ namespace CodeWalker
 
         private void InitFileCache()
         {
+            if (Rpf9Folder != null) return;
             Task.Run(() =>
             {
                 lock (FileCacheSyncRoot)
@@ -723,9 +732,9 @@ namespace CodeWalker
             UpdateStatus("Scanning...");
 
             var root = new MainTreeFolder();
-            root.FullPath = GTAFolder.GetCurrentGTAFolderWithTrailingSlash();
+            root.FullPath = ExplorerRootPath;
             root.Path = "";
-            root.Name = "GTA V";
+            root.Name = Rpf9Folder == null ? "GTA V" : "RPF9 (read-only)";
             RootFolder = root;
 
             RefreshMainTreeViewRoot(root);
@@ -872,7 +881,7 @@ namespace CodeWalker
         }
         private void RecurseMainTreeViewRPF(MainTreeFolder f, List<RpfFile> allRpfs, string rootpath = null)
         {
-            var gamepath = GTAFolder.GetCurrentGTAFolderWithTrailingSlash();
+            var gamepath = ExplorerRootPath;
             if (rootpath == null)
             {
                 rootpath = gamepath;
@@ -1026,7 +1035,7 @@ namespace CodeWalker
                 }
                 else
                 {
-                    if (!FirstRefreshed && !string.IsNullOrEmpty(Settings.Default.RPFExplorerStartFolder))
+                    if (Rpf9Folder == null && !FirstRefreshed && !string.IsNullOrEmpty(Settings.Default.RPFExplorerStartFolder))
                     {
                         Navigate(Settings.Default.RPFExplorerStartFolder);
                     }
@@ -1613,6 +1622,11 @@ namespace CodeWalker
                 if (data == null) return;
 
                 var ft = item.FileType;
+                if (item.File is Rpf9FileEntry && data.Length >= 5 && Encoding.ASCII.GetString(data,0,5) == "<?xml")
+                {
+                    ViewXml(name,path,data,item.File);
+                    return;
+                }
                 var fe = item.File;
                 if (fe == null)
                 { 
@@ -2112,6 +2126,7 @@ namespace CodeWalker
 
         private void EnableEditMode(bool enable, bool warn = true)
         {
+            if (enable && Rpf9Folder != null) { MessageBox.Show("RPF9 browsing and extraction are read-only."); return; }
             if (EditMode == enable)
             {
                 return;
@@ -2261,6 +2276,7 @@ namespace CodeWalker
             var rpf = file ?? CurrentFolder.RpfFolder.File;
 
             if (rpf == null) return false;
+            if (rpf.IsReadOnly) { MessageBox.Show("RPF9 archives are read-only and cannot be converted to OPEN encryption."); return false; }
 
             if (RpfFile.IsValidEncryption(rpf, recursive)) return true;//it's already valid...
 
@@ -2438,6 +2454,7 @@ namespace CodeWalker
                 var idx = MainListView.SelectedIndices[0];
                 if ((idx < 0) || (idx >= CurrentFiles.Count)) return;
                 var file = CurrentFiles[idx];
+                if (SaveSelectedRpf9(file)) return;
 
                 if ((file.Folder == null) || (file.Folder.RpfFile != null))
                 {
@@ -2480,6 +2497,7 @@ namespace CodeWalker
                         var path = folderpath + file.Name;
                         try
                         {
+                            if (TrySaveRpf9(file,path)) continue;
                             var data = GetFileDataCompressResources(file);
                             if (data == null)
                             {
@@ -2510,6 +2528,7 @@ namespace CodeWalker
                 var idx = MainListView.SelectedIndices[0];
                 if ((idx < 0) || (idx >= CurrentFiles.Count)) return;
                 var file = CurrentFiles[idx];
+                if (SaveSelectedRpf9(file)) return;
                 if (file.Folder == null)
                 {
                     byte[] data = GetFileData(file);
@@ -2549,6 +2568,8 @@ namespace CodeWalker
                     if (file.Folder == null)
                     {
                         var path = folderpath + file.Name;
+                        try { if (TrySaveRpf9(file,path)) continue; }
+                        catch (Exception ex) { errors.AppendLine("Unable to extract " + file.Path + ": " + ex.Message); continue; }
                         var data = GetFileData(file);
                         if (data == null)
                         {
@@ -2589,6 +2610,7 @@ namespace CodeWalker
                     var path = folderpath + file.Name;
                     try
                     {
+                        if (TrySaveRpf9(file,path)) continue;
                         var data = GetFileDataCompressResources(file);
                         if (data == null)
                         {
@@ -4818,6 +4840,11 @@ namespace CodeWalker
             Name = file.Name;
             Path = file.Path;
             FullPath = rootpath + file.Path;
+            if (file is Rpf9FileEntry)
+            {
+                var top=file.File.GetTopParent();
+                FullPath=top.FilePath+file.Path.Substring(top.Path.Length);
+            }
         }
 
         public override string ToString()
@@ -4837,6 +4864,8 @@ namespace CodeWalker
             {
                 FileSize = File.GetFileSize();
                 FileSizeText = TextUtil.GetBytesReadable(FileSize);
+                if (File is Rpf9FileEntry rpf9)
+                    Attributes = rpf9.Record.IsResource ? "RPF9 resource body, read-only" : "RPF9, read-only";
                 if (File is RpfResourceFileEntry)
                 {
                     var resf = File as RpfResourceFileEntry;

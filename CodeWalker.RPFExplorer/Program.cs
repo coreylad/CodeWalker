@@ -15,13 +15,18 @@ namespace CodeWalker.RPFExplorer
         /// The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             //Process.Start("CodeWalker.exe", "explorer");
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new ExploreForm());
+            if (args.Length != 0 && (args.Length != 2 || args[0] != "--rpf9"))
+            {
+                MessageBox.Show("Usage: CodeWalker RPF Explorer.exe [--rpf9 <archive-folder>]");
+                return;
+            }
+            Application.Run(new ExploreForm(args.Length == 2 ? args[1] : null));
 
             GTAFolder.UpdateSettings();
         }

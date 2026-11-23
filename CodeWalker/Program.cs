@@ -58,6 +58,14 @@ namespace CodeWalker
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            var rpf9Index = Array.IndexOf(args, "--rpf9");
+            if (rpf9Index >= 0)
+            {
+                if (rpf9Index + 1 >= args.Length) { MessageBox.Show("Usage: CodeWalker.exe --rpf9 <archive-folder>"); return; }
+                Application.Run(new ExploreForm(args[rpf9Index+1]));
+                return;
+            }
+
 
             // Always check the GTA folder first thing
             if (!GTAFolder.UpdateGTAFolder(Properties.Settings.Default.RememberGTAFolder))

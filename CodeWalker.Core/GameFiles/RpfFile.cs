@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace CodeWalker.GameFiles
 {
 
-    public class RpfFile
+    public partial class RpfFile
     {
         public string Name { get; set; } //name of this RPF file/package
         public string NameLower { get; set; }
@@ -138,6 +138,11 @@ namespace CodeWalker.GameFiles
             StartPos = br.BaseStream.Position;
 
             Version = br.ReadUInt32(); //RPF Version - GTAV should be 0x52504637 (1380992567)
+            if (Version == Rpf9Archive.Magic)
+            {
+                ReadRpf9Header(br);
+                return;
+            }
             EntryCount = br.ReadUInt32(); //Number of Entries
             NamesLength = br.ReadUInt32();
             Encryption = (RpfEncryption)br.ReadUInt32(); //0x04E45504F (1313165391): none;  0x0ffffff9 (268435449): AES
@@ -289,7 +294,7 @@ namespace CodeWalker.GameFiles
                 {
                     LastError = ex.ToString();
                     LastException = ex;
-                    errorLog(FilePath + ": " + LastError);
+                    errorLog?.Invoke(FilePath + ": " + LastError);
                 }
             }
         }
@@ -318,13 +323,16 @@ namespace CodeWalker.GameFiles
                         var lname = binentry.NameLower;
                         if (lname.EndsWith(".rpf") && IsValidPath(binentry.Path))
                         {
-                            br.BaseStream.Position = StartPos + ((long)binentry.FileOffset * 512);
+                            br.BaseStream.Position = StartPos + (binentry is Rpf9FileEntry rpf9entry ? rpf9entry.Record.Offset : (long)binentry.FileOffset * 512);
 
                             long l = binentry.GetFileSize();
 
                             RpfFile subfile = new RpfFile(binentry.Name, binentry.Path, l);
                             subfile.Parent = this;
                             subfile.ParentFileEntry = binentry;
+                            var depth = 0;
+                            for (var ancestor = this; ancestor != null; ancestor = ancestor.Parent) depth++;
+                            if (depth >= 16) throw new InvalidDataException("Nested archive depth limit reached.");
 
                             subfile.ScanStructure(br, updateStatus, errorLog);
 
@@ -339,7 +347,8 @@ namespace CodeWalker.GameFiles
                         else
                         {
                             //binary file that's not an rpf...
-                            GrandTotalBinaryFileCount++;
+                            if (binentry is Rpf9FileEntry body && body.Record.IsResource) GrandTotalResourceCount++;
+                            else GrandTotalBinaryFileCount++;
                             GrandTotalFileCount++;
                         }
                     }
@@ -528,6 +537,15 @@ namespace CodeWalker.GameFiles
         }
         public byte[] ExtractFileBinary(RpfBinaryFileEntry entry, BinaryReader br)
         {
+            if (entry is Rpf9FileEntry rpf9entry)
+            {
+                if (rpf9entry.Record.DecodedSize > int.MaxValue) throw new NotSupportedException("This RPF9 entry is too large for an in-memory viewer. Use streamed extraction.");
+                using (var output = new MemoryStream())
+                {
+                    Rpf9.Extract(br.BaseStream, rpf9entry.Record, output);
+                    return output.ToArray();
+                }
+            }
             br.BaseStream.Position = StartPos + ((long)entry.FileOffset * 512);
 
             long l = entry.GetFileSize();
@@ -957,6 +975,7 @@ namespace CodeWalker.GameFiles
 
         private void WriteHeader(BinaryWriter bw)
         {
+            EnsureWritable();
             var namesdata = GetHeaderNamesData();
             NamesLength = (uint)namesdata.Length;
 
@@ -1534,6 +1553,7 @@ namespace CodeWalker.GameFiles
 
         public static RpfFile CreateNew(RpfDirectoryEntry dir, string name, RpfEncryption encryption = RpfEncryption.OPEN)
         {
+            dir.File.EnsureWritable();
             //create a new empty RPF inside the given parent RPF directory.
 
             string namel = name.ToLowerInvariant();
@@ -1587,6 +1607,7 @@ namespace CodeWalker.GameFiles
 
         public static RpfDirectoryEntry CreateDirectory(RpfDirectoryEntry dir, string name)
         {
+            dir.File.EnsureWritable();
             //create a new directory inside the given parent dir
 
             RpfFile parent = dir.File;
@@ -1632,6 +1653,7 @@ namespace CodeWalker.GameFiles
 
         public static RpfFileEntry CreateFile(RpfDirectoryEntry dir, string name, byte[] data, bool overwrite = true)
         {
+            dir.File.EnsureWritable();
             string namel = name.ToLowerInvariant();
             if (overwrite)
             {
@@ -1782,6 +1804,7 @@ namespace CodeWalker.GameFiles
 
         public static void RenameArchive(RpfFile file, string newname)
         {
+            file.EnsureWritable();
             //updates all items in the RPF with the new path - no actual file changes made here
             //(since all the paths are generated at runtime and not stored)
 
@@ -1796,6 +1819,7 @@ namespace CodeWalker.GameFiles
 
         public static void RenameEntry(RpfEntry entry, string newname)
         {
+            entry.File.EnsureWritable();
             //rename the entry in the RPF header... 
             //also make sure any relevant child paths are updated...
 
@@ -1833,6 +1857,7 @@ namespace CodeWalker.GameFiles
 
         public static void DeleteEntry(RpfEntry entry)
         {
+            entry.File.EnsureWritable();
             //delete this entry from the RPF header.
             //also remove any references to this item in its parent directory...
             //if this is a directory entry, this will delete the contents first
@@ -1896,6 +1921,7 @@ namespace CodeWalker.GameFiles
         public static bool IsValidEncryption(RpfFile file, bool recursive = false)
         {
             if (file == null) return false;
+            if (file.IsReadOnly) return false;
 
             if (file.Encryption != RpfEncryption.OPEN) return false;
 
@@ -1933,6 +1959,7 @@ namespace CodeWalker.GameFiles
         public static bool EnsureValidEncryption(RpfFile file, Func<RpfFile, bool> confirm, bool recursive = false)
         {
             if (file == null) return false;
+            if (file.IsReadOnly) return false;
 
             //currently assumes OPEN is the valid encryption type.
             //TODO: support other encryption types!
@@ -1990,6 +2017,7 @@ namespace CodeWalker.GameFiles
 
         public static void SetEncryptionType(RpfFile file, RpfEncryption encryption)
         {
+            file.EnsureWritable();
             file.Encryption = encryption;
             string fpath = file.GetPhysicalFilePath();
             using (var fstream = File.Open(fpath, FileMode.Open, FileAccess.ReadWrite))
@@ -2004,6 +2032,7 @@ namespace CodeWalker.GameFiles
 
         public static void Defragment(RpfFile file, Action<string, float> progress = null, bool recursive = true)
         {
+            file?.EnsureWritable();
             if (file?.AllEntries == null) return;
 
             if (recursive)
@@ -2146,6 +2175,7 @@ namespace CodeWalker.GameFiles
 
     public enum RpfEncryption : uint
     {
+        RPF9 = Rpf9Archive.Magic, //read-only, executable-derived cipher configurations
         NONE = 0, //some modded RPF's may use this
         OPEN = 0x4E45504F, //1313165391 "OPEN", ie. "no encryption"
         AES =  0x0FFFFFF9, //268435449
