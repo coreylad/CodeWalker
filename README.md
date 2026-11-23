@@ -4,6 +4,10 @@
 </div>
 
 ## Requirements:
+
+For experimental, read-only RPF9 browsing and extraction, see [RPF9 support](docs/RPF9.md).
+RPF9 mode uses the supported executable supplied by the user and does not require a GTAV installation.
+
 - PC version of GTA:V;
 - 4GB RAM (8+ recommended);
 - Windows 7 and above, x64 processor;
