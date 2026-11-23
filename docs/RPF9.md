@@ -14,6 +14,22 @@ as data and never launched. Other executable hashes fail explicitly.
 
 ## Opening archives
 
+The normal game picker now includes **GTA 6 (RPF9, read-only)** alongside
+GTAV Legacy and Enhanced. On first launch, or through **File > Configure
+Game...**, select GTA 6 and use the executable browse button to choose
+`game_scarlett_master.exe`. Choosing that file also selects GTA 6 and its
+containing folder. Select or enter your archives folder, then press **OK**.
+The game and executable path are saved with the existing user settings.
+Normal startup with GTA 6 selected opens the archive Explorer; it does not
+attempt to load the GTAV world. No command-line argument is needed.
+
+The executable is checked against the supported SHA-256 before the selection
+is accepted. GTA 6 can use an executable outside the archives folder: choose
+the executable first, then select or type the archives folder. GTAV editions
+continue to use their corresponding executable inside the selected game folder.
+Existing GTAV Legacy/Enhanced settings are preserved when no game choice has
+yet been saved.
+
 Build the Release configuration of `CodeWalker.RPFExplorer` using Visual
 Studio 2022 with .NET desktop development, the .NET Framework 4.8 targeting
 pack and a .NET SDK. From a Visual Studio Developer PowerShell:
@@ -101,7 +117,18 @@ extraction. These checks do not establish full extraction of every large
 archive in the collection. Format 4 is covered by a synthetic descriptor
 test; it was not present in the inspected collection.
 
-The Windows-only smoke test runs a hidden Explorer, waits for its scan,
+The Windows-only configuration checks exercise all three game choices,
+executable matching, unsupported GTA 6 build rejection and migration of old
+GTAV settings. They run in CI without game files and never save user profiles:
+
+```powershell
+msbuild CodeWalker.Rpf9.DesktopTests\CodeWalker.Rpf9.DesktopTests.csproj /restore /p:Configuration=Release
+& '.\CodeWalker.Rpf9.DesktopTests\bin\Release\net48\CodeWalker.Rpf9.DesktopTests.exe' --configuration
+```
+
+The optional private-fixture smoke test chooses the verified GTA 6 executable
+through the selector and starts the default Explorer constructor, exercising
+configured-game startup without `--rpf9`. It runs a hidden Explorer, waits for its scan,
 navigates common.rpf, checks all 418 list items and their virtual paths,
 exports decrypted XML through the UI save helper, and rejects overwriting
 the source archive. Use a test folder containing only common.rpf and the

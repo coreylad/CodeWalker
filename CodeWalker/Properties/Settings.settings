@@ -2,6 +2,12 @@
 <SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="CodeWalker.Properties" GeneratedClassName="Settings">
   <Profiles />
   <Settings>
+    <Setting Name="GTASelectedGame" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="GTAExecutablePath" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
     <Setting Name="Key" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>

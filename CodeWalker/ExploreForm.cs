@@ -68,7 +68,7 @@ namespace CodeWalker
             LoadSettings();
 
             GTAFolder.UpdateEnhancedFormTitle(this);
-            if (Rpf9Folder != null) Text = "CodeWalker RPF9 Explorer (read-only)";
+            if (Rpf9Folder != null) Text = "CodeWalker GTA 6 Explorer (RPF9, read-only)";
         }
 
         private void SetTheme(string themestr, bool changing = true)
@@ -187,6 +187,15 @@ namespace CodeWalker
             {
                 Close();
                 return;
+            }
+
+            // The first-run game picker may have selected GTA 6 after this form was constructed.
+            if (GTAFolder.IsGta6)
+            {
+                var configuredFolder = Rpf9Folder == null || string.Equals(Rpf9Folder.TrimEnd('\\'), GTAFolder.CurrentGTAFolder.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+                if (Rpf9Folder == null) Rpf9Folder = GTAFolder.CurrentGTAFolder;
+                if (configuredFolder) Rpf9KeyStore.ExecutablePath = GTAFolder.CurrentExecutablePath;
+                Text = "CodeWalker GTA 6 Explorer (RPF9, read-only)";
             }
 
 
@@ -390,6 +399,11 @@ namespace CodeWalker
             var result = GTAFolder.UpdateGTAFolder(false, false);
             if (result)
             {
+                if (GTAFolder.IsGta6)
+                {
+                    new ExploreForm().Show(this);
+                    return;
+                }
                 MessageBox.Show("Please restart CodeWalker to use the new folder.");
             }
         }
@@ -734,7 +748,7 @@ namespace CodeWalker
             var root = new MainTreeFolder();
             root.FullPath = ExplorerRootPath;
             root.Path = "";
-            root.Name = Rpf9Folder == null ? "GTA V" : "RPF9 (read-only)";
+            root.Name = Rpf9Folder == null ? "GTA V" : "GTA 6 (RPF9, read-only)";
             RootFolder = root;
 
             RefreshMainTreeViewRoot(root);

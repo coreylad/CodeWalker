@@ -12,10 +12,60 @@ using CodeWalker.Utils;
 
 namespace CodeWalker
 {
+    public enum GtaGame
+    {
+        GtaVLegacy,
+        GtaVEnhanced,
+        GtaVI
+    }
+
     public static class GTAFolder
     {
         public static string CurrentGTAFolder { get; private set; } = Settings.Default.GTAFolder;
-        public static bool IsGen9 { get; private set; } = Settings.Default.GTAGen9;
+        public static GtaGame CurrentGame { get; private set; } = ReadSelectedGame();
+        public static bool IsGen9 { get { return CurrentGame == GtaGame.GtaVEnhanced; } }
+        public static bool IsGta6 { get { return CurrentGame == GtaGame.GtaVI; } }
+        public static string CurrentExecutablePath { get; private set; } = string.IsNullOrWhiteSpace(Settings.Default.GTAExecutablePath)
+            ? GetExecutablePath(CurrentGTAFolder, CurrentGame) : Settings.Default.GTAExecutablePath;
+
+        private static GtaGame ReadSelectedGame()
+        {
+            if (Enum.TryParse(Settings.Default.GTASelectedGame, out GtaGame game) && Enum.IsDefined(typeof(GtaGame), game)) return game;
+            return Settings.Default.GTAGen9 ? GtaGame.GtaVEnhanced : GtaGame.GtaVLegacy;
+        }
+
+        public static string GetExecutableName(GtaGame game)
+        {
+            switch (game)
+            {
+                case GtaGame.GtaVLegacy: return "GTA5.exe";
+                case GtaGame.GtaVEnhanced: return "GTA5_Enhanced.exe";
+                case GtaGame.GtaVI: return "game_scarlett_master.exe";
+                default: throw new ArgumentOutOfRangeException(nameof(game));
+            }
+        }
+
+        public static string GetExecutablePath(string folder, GtaGame game) => Path.Combine(folder ?? "", GetExecutableName(game));
+
+        public static bool TryGetGameFromExecutable(string executable, out GtaGame game)
+        {
+            foreach (GtaGame candidate in Enum.GetValues(typeof(GtaGame)))
+                if (string.Equals(Path.GetFileName(executable), GetExecutableName(candidate), StringComparison.OrdinalIgnoreCase))
+                {
+                    game = candidate;
+                    return true;
+                }
+            game = GtaGame.GtaVLegacy;
+            return false;
+        }
+
+        public static GtaGame DetectGame(string folder, GtaGame preferred = GtaGame.GtaVLegacy)
+        {
+            if (File.Exists(GetExecutablePath(folder, preferred))) return preferred;
+            if (File.Exists(GetExecutablePath(folder, GtaGame.GtaVI))) return GtaGame.GtaVI;
+            if (IsGen9Folder(folder)) return GtaGame.GtaVEnhanced;
+            return File.Exists(GetExecutablePath(folder, GtaGame.GtaVLegacy)) ? GtaGame.GtaVLegacy : preferred;
+        }
 
         public static bool IsGen9Folder(string folder)
         {
@@ -23,6 +73,9 @@ namespace CodeWalker
         }
 
         public static bool ValidateGTAFolder(string folder, bool gen9, out string failReason)
+            => ValidateGameFolder(folder, gen9 ? GtaGame.GtaVEnhanced : GtaGame.GtaVLegacy, null, out failReason);
+
+        public static bool ValidateGameFolder(string folder, GtaGame game, string executable, out string failReason)
         {
             failReason = "";
 
@@ -38,19 +91,33 @@ namespace CodeWalker
                 return false;
             }
 
-            if (gen9)
+            if (!Enum.IsDefined(typeof(GtaGame), game))
             {
-                if (!File.Exists(folder + @"\gta5_enhanced.exe"))
-                {
-                    failReason = $"GTA5_Enhanced.exe not found in folder \"{folder}\"";
-                    return false;
-                }
+                failReason = "Unknown game selection";
+                return false;
             }
-            else
+            executable = string.IsNullOrWhiteSpace(executable) ? GetExecutablePath(folder, game) : executable;
+            if (!string.Equals(Path.GetFileName(executable), GetExecutableName(game), StringComparison.OrdinalIgnoreCase))
             {
-                if(!File.Exists(folder + @"\gta5.exe"))
+                failReason = $"Select {GetExecutableName(game)} for this game.";
+                return false;
+            }
+            if (!File.Exists(executable))
+            {
+                failReason = $"{GetExecutableName(game)} not found: \"{executable}\"";
+                return false;
+            }
+            if (game != GtaGame.GtaVI && !string.Equals(Path.GetFullPath(executable), Path.GetFullPath(GetExecutablePath(folder, game)), StringComparison.OrdinalIgnoreCase))
+            {
+                failReason = "The GTAV executable must be inside the selected game folder.";
+                return false;
+            }
+            if (game == GtaGame.GtaVI)
+            {
+                try { Rpf9KeyStore.Load(executable); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is NotSupportedException)
                 {
-                    failReason = $"GTA5.exe not found in folder \"{folder}\"";
+                    failReason = ex.Message;
                     return false;
                 }
             }
@@ -60,7 +127,7 @@ namespace CodeWalker
 
         public static bool ValidateGTAFolder(string folder, bool gen9) => ValidateGTAFolder(folder, gen9, out string reason);
 
-        public static bool IsCurrentGTAFolderValid() => ValidateGTAFolder(CurrentGTAFolder, IsGen9);
+        public static bool IsCurrentGTAFolderValid() => ValidateGameFolder(CurrentGTAFolder, CurrentGame, CurrentExecutablePath, out string reason);
 
         public static bool UpdateGTAFolder(bool useCurrentIfValid = false, bool autoDetect = true)
         {
@@ -69,7 +136,8 @@ namespace CodeWalker
                 return true;
             }
 
-            var gen9 = IsGen9;
+            var game = CurrentGame;
+            var executable = CurrentExecutablePath;
             string origFolder = CurrentGTAFolder;
             string folder = CurrentGTAFolder;
             SelectFolderForm f = new SelectFolderForm();
@@ -80,7 +148,8 @@ namespace CodeWalker
                 if (autoFolder != null && MessageBox.Show($"Auto-detected game folder \"{autoFolder}\" from {source}.\n\nContinue with auto-detected folder?", "Auto-detected game folder", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes)
                 {
                     f.SelectedFolder = autoFolder;
-                    f.IsGen9 = IsGen9Folder(autoFolder);
+                    f.SelectedGame = autoFolder == CurrentGTAFolder ? CurrentGame : DetectGame(autoFolder, CurrentGame);
+                    f.SelectedExecutable = autoFolder == CurrentGTAFolder ? CurrentExecutablePath : GetExecutablePath(autoFolder, f.SelectedGame);
                 }
             }
 
@@ -92,13 +161,14 @@ namespace CodeWalker
             if (f.Result == DialogResult.OK && Directory.Exists(f.SelectedFolder))
             {
                 folder = f.SelectedFolder;
-                gen9 = f.IsGen9;
+                game = f.SelectedGame;
+                executable = f.SelectedExecutable;
             }
 
             string failReason;
-            if (ValidateGTAFolder(folder, gen9, out failReason))
+            if (ValidateGameFolder(folder, game, executable, out failReason))
             {
-                SetGTAFolder(folder, gen9);
+                SetGameFolder(folder, game, executable);
                 if (folder != origFolder)
                 {
                     MessageBox.Show($"Successfully changed GTA Folder to \"{folder}\"", "Set GTA Folder", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -120,14 +190,24 @@ namespace CodeWalker
         }
 
         public static bool SetGTAFolder(string folder, bool gen9)
+            => SetGameFolder(folder, gen9 ? GtaGame.GtaVEnhanced : GtaGame.GtaVLegacy);
+
+        public static bool SetGameFolder(string folder, GtaGame game, string executable = null, bool saveSettings = true)
         {
-            if(ValidateGTAFolder(folder, gen9))
+            if(ValidateGameFolder(folder, game, executable, out string reason))
             {
-                CurrentGTAFolder = folder;
-                IsGen9 = gen9;
-                Settings.Default.GTAFolder = folder;
-                Settings.Default.GTAGen9 = gen9;
-                Settings.Default.Save();
+                CurrentGTAFolder = Path.GetFullPath(folder);
+                CurrentGame = game;
+                CurrentExecutablePath = Path.GetFullPath(string.IsNullOrWhiteSpace(executable) ? GetExecutablePath(folder, game) : executable);
+                Rpf9KeyStore.ExecutablePath = IsGta6 ? CurrentExecutablePath : null;
+                if (saveSettings)
+                {
+                    Settings.Default.GTAFolder = CurrentGTAFolder;
+                    Settings.Default.GTAGen9 = IsGen9;
+                    Settings.Default.GTASelectedGame = game.ToString();
+                    Settings.Default.GTAExecutablePath = CurrentExecutablePath;
+                    Settings.Default.Save();
+                }
                 return true;
             }
 
@@ -140,7 +220,7 @@ namespace CodeWalker
         {
             matches = new Dictionary<string, string>();
 
-            if(ValidateGTAFolder(CurrentGTAFolder, IsGen9))
+            if(IsCurrentGTAFolderValid())
             {
                 matches.Add("Current CodeWalker Folder", CurrentGTAFolder);
             }
@@ -191,6 +271,7 @@ namespace CodeWalker
 
         public static void UpdateSettings()
         {
+            if (IsGta6) return;
             if (string.IsNullOrEmpty(Settings.Default.Key) && (GTA5Keys.PC_AES_KEY != null))
             {
                 Settings.Default.Key = Convert.ToBase64String(GTA5Keys.PC_AES_KEY);
@@ -204,7 +285,8 @@ namespace CodeWalker
         }
         public static void UpdateEnhancedFormTitle(Form form)
         {
-            if (IsGen9) form.Text = GetEnhancedFormTitle(form.Text);
+            if (IsGta6) form.Text += " (GTA 6 - RPF9 read-only)";
+            else if (IsGen9) form.Text = GetEnhancedFormTitle(form.Text);
         }
     }
 }
