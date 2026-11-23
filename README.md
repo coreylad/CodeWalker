@@ -3,6 +3,16 @@
     This program is for viewing the contents of GTAV RPF archives.
 </div>
 
+## Automated builds
+
+The [Build CodeWalker workflow](https://github.com/coreylad/CodeWalker/actions/workflows/build.yml)
+runs on every push and pull request, and can also be started manually after it
+is merged into the default branch. It builds the Windows Release versions of
+CodeWalker and RPF Explorer and runs the synthetic/RPF7 regression checks.
+Download `CodeWalker-win-x64-<commit>` from a successful run's **Artifacts**
+section, extract the ZIP and launch either executable. Artifacts are retained
+for 14 days. CI does not require game files or run the private-fixture tests.
+
 ## Requirements:
 
 For experimental, read-only RPF9 browsing and extraction, see [RPF9 support](docs/RPF9.md).
