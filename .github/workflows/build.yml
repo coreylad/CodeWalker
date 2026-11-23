@@ -61,6 +61,13 @@ jobs:
           /restore /m /p:Configuration=Release /p:Platform=AnyCPU
           /verbosity:minimal /nologo /bl:msbuild.binlog
 
+      - name: Check game selection and configuration
+        # The configuration checks below need no game files and never save user profiles.
+        run: |
+          msbuild CodeWalker.Rpf9.DesktopTests/CodeWalker.Rpf9.DesktopTests.csproj /restore /m /p:Configuration=Release /verbosity:minimal /nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & './CodeWalker.Rpf9.DesktopTests/bin/Release/net48/CodeWalker.Rpf9.DesktopTests.exe' --configuration
+
       - name: Prepare downloadable application
         run: |
           New-Item -ItemType Directory -Path artifacts/package -Force | Out-Null

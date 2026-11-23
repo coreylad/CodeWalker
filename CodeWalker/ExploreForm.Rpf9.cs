@@ -7,7 +7,7 @@ namespace CodeWalker
 {
     public partial class ExploreForm
     {
-        private readonly string Rpf9Folder;
+        private string Rpf9Folder;
         internal string ExplorerRootPath { get { return Rpf9Folder == null ? GTAFolder.GetCurrentGTAFolderWithTrailingSlash() : Rpf9Folder.TrimEnd('\\','/') + "\\"; } }
 
         private void AddRpf9Menu()

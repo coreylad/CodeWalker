@@ -17,6 +17,10 @@ for 14 days. CI does not require game files or run the private-fixture tests.
 
 For experimental, read-only RPF9 browsing and extraction, see [RPF9 support](docs/RPF9.md).
 RPF9 mode uses the supported executable supplied by the user and does not require a GTAV installation.
+Choose **GTA 6 (RPF9, read-only)** in the game picker and browse to
+`game_scarlett_master.exe`. CodeWalker saves the game selection and executable
+path and opens the archive Explorer on subsequent launches. GTA 6 world and
+resource rendering are not yet supported.
 
 - PC version of GTA:V;
 - 4GB RAM (8+ recommended);

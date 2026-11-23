@@ -26,6 +26,22 @@ namespace CodeWalker.Properties {
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string GTASelectedGame {
+            get { return ((string)(this["GTASelectedGame"])); }
+            set { this["GTASelectedGame"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string GTAExecutablePath {
+            get { return ((string)(this["GTAExecutablePath"])); }
+            set { this["GTAExecutablePath"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
         public string Key {
             get {
                 return ((string)(this["Key"]));
